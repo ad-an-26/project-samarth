@@ -37,28 +37,19 @@ API_MAX_RECORDS_SAFETY_CAP = 350000
 # LLM Mode: "external" (uses API like Gemini/OpenAI) or "local" (uses Ollama)
 LLM_MODE = "external"  
 
-# Model name for LiteLLM (examples below)
-# For external APIs:
-#   - "gpt-4o-mini" (OpenAI GPT-4o mini - Recommended, fast & affordable)
-#   - "gpt-4o" (OpenAI GPT-4o - Most capable)
-#   - "gpt-3.5-turbo" (OpenAI GPT-3.5 - Cheapest)
-#   - "gemini/gemini-pro" (Google Gemini)
-#   - "claude-3-opus-20240229" (Anthropic)
-# For local:
-#   - "ollama/llama3:8b" (Ollama with Llama 3)
 LLM_MODEL_NAME = "gpt-4o-mini"
 
 # Local LLM API base (only used if LLM_MODE = "local")
 LLM_LOCAL_API_BASE = "http://localhost:11434"
 
 # LLM parameters
-LLM_TEMPERATURE = 0.0  # Set to 0.0 for maximum accuracy and deterministic code-gen
+LLM_TEMPERATURE = 0.0
 LLM_MAX_TOKENS = 2000
 
 # Agent parameters
-AGENT_VERBOSE = True   # MUST be True for debugging
+AGENT_VERBOSE = True
 AGENT_MAX_ITERATIONS = 4
-AGENT_HANDLE_PARSING_ERRORS = True # Good robustness setting
+AGENT_HANDLE_PARSING_ERRORS = True
 
 # --- Visualization Configuration ---
 DEFAULT_CHART_HEIGHT = 400
@@ -80,12 +71,8 @@ INDIAN_STATES = [
 CLIMATE_YEARS_RANGE = list(range(1997, 2026))  # 1997 to 2025
 
 # --- Semantic Layer: Column Standardization ---
-# This is the "brain" of our data cleaning.
-# Keys = Raw column names from the API (based on your schemas & images)
-# Values = Standardized names our agent will use
 COLUMN_MAPPINGS = {
     "agriculture": {
-        # Confirmed by your image:
         'state_name': 'State',
         'district_name': 'District',
         'crop_year': 'Year',
@@ -95,12 +82,11 @@ COLUMN_MAPPINGS = {
         'production_': 'Production'
     },
     "climate": {
-        # Based on your text schema, corrected by your image:
         'State': 'State',
         'District': 'District',
         'Year': 'Year',
         'Month': 'Month',
         'Avg Rainfall': 'Rainfall',
-        'Agency_name': 'Agency'  # <-- THIS IS THE FIX (was 'Agency Name')
+        'Agency_name': 'Agency'
     }
 }
