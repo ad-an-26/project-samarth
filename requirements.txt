@@ -11,9 +11,5 @@ pyarrow
 fastparquet
 requests
 pydantic
-<<<<<<< HEAD
-sqlalchemy
-=======
 sqlalchemy
 scipy
->>>>>>> d497243e5f6d91a7071d57a80ce35108269987bd
