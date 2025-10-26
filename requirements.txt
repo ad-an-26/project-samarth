@@ -12,3 +12,4 @@ fastparquet
 requests
 pydantic
 sqlalchemy
+scipy
