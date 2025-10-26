@@ -1,8 +1,5 @@
 """
-Flow 1: The "Version-Aware" Data Pipeline
-Handles intelligent data caching with freshness checks.
-Includes State+Year+Month chunking for climate data BUT disables auto-refresh
-for climate dataset in prototype mode for performance.
+Version-aware data pipeline with intelligent caching and freshness checks.
 """
 
 import json
@@ -18,7 +15,7 @@ from config import (
     API_BASE_URL, RESOURCES, CACHE_LOG_FILE,
     CACHE_CHECK_INTERVAL_SECONDS, API_LIMIT_PER_REQUEST,
     API_MAX_RECORDS_SAFETY_CAP, COLUMN_MAPPINGS,
-    INDIAN_STATES, CLIMATE_YEARS_RANGE # Ensure these are defined in config.py
+    INDIAN_STATES, CLIMATE_YEARS_RANGE
 )
 
 
@@ -30,11 +27,6 @@ class DataLoader:
         self.api_key = api_key
         self.cache_log = self._load_cache_log()
 
-    # ... (Keep _load_cache_log, _save_cache_log, _check_daily_gate,
-    #      _get_remote_metadata, _fetch_all_records,
-    #      _fetch_climate_records_chunked, _clean_and_standardize
-    #      exactly as they were in the previous correct version) ...
-    # --- Paste the previous versions of these helper methods here ---
 
     def _load_cache_log(self) -> Dict:
         """Load the cache log file or create a new one."""
@@ -92,7 +84,7 @@ class DataLoader:
         }
 
         try:
-            response = requests.get(url, params=params, headers=headers, timeout=20) # Increased timeout slightly
+            response = requests.get(url, params=params, headers=headers, timeout=20)
             response.raise_for_status()
             data = response.json()
 
@@ -104,9 +96,6 @@ class DataLoader:
 
             if timestamp is None:
                 st.warning(f"API response missing 'updated' timestamp for {resource_id}.")
-            # total_records might legitimately be missing or zero, don't warn unless needed for progress
-            # if total_records is None:
-            #      st.warning(f"API response missing 'total' records count for {resource_id}.")
 
             return timestamp, total_records
 
@@ -114,7 +103,6 @@ class DataLoader:
              st.warning(f"Timeout checking remote metadata for {resource_id}.")
              return None, None
         except requests.exceptions.RequestException as e:
-            # Be more specific about potential 404s etc.
             st.warning(f"Could not check remote metadata for {resource_id} (Status: {response.status_code if 'response' in locals() else 'N/A'}): {e}")
             return None, None
         except (json.JSONDecodeError, ValueError, TypeError) as e:
@@ -131,13 +119,12 @@ class DataLoader:
         offset = 0
         url = f"{API_BASE_URL}/{resource_id}"
 
-        # Determine max_fetch and if progress can be shown accurately
         if total_records is not None and total_records > 0:
              max_fetch = min(total_records, API_MAX_RECORDS_SAFETY_CAP)
              show_progress = True
         else:
-             max_fetch = API_MAX_RECORDS_SAFETY_CAP # Use safety cap if total unknown
-             show_progress = False # Can't show accurate progress
+             max_fetch = API_MAX_RECORDS_SAFETY_CAP
+             show_progress = False
 
         spinner_text = f"Fetching {resource_name} data from data.gov.in..."
         if show_progress:
@@ -150,7 +137,7 @@ class DataLoader:
             progress_bar = st.progress(0.0) if show_progress else None
             status_text = st.empty()
 
-            while offset < max_fetch: # Loop until max_fetch or no more records
+            while offset < max_fetch:
                 params = {
                     "api-key": self.api_key,
                     "format": "json",
@@ -163,40 +150,38 @@ class DataLoader:
 
                 try:
                     status_text.text(f"Requesting {resource_name} records from offset {offset:,}...")
-                    response = requests.get(url, params=params, headers=headers, timeout=45) # Increased timeout
+                    response = requests.get(url, params=params, headers=headers, timeout=45)
                     response.raise_for_status()
                     data = response.json()
 
                     records = data.get('records', [])
                     if not records:
                         status_text.text(f"No more {resource_name} records found at offset {offset:,}.")
-                        break  # No more data
+                        break
 
                     all_records.extend(records)
                     fetched_count = len(records)
                     offset += fetched_count
 
-                    # Update progress bar if possible
                     if show_progress and progress_bar:
                         progress = min(offset / max_fetch, 1.0)
                         progress_bar.progress(progress, text=f"Fetched {offset:,} / {max_fetch:,}...")
 
-                    # Break if we got fewer than requested (likely end of data)
                     if fetched_count < API_LIMIT_PER_REQUEST:
                         status_text.text(f"Received fewer records than limit, assuming end of data for {resource_name}.")
                         break
 
-                    time.sleep(0.1) # Polite rate limiting
+                    time.sleep(0.1)
 
                 except requests.exceptions.Timeout:
                     st.warning(f"Timeout fetching data at offset {offset}. Retrying after delay...")
                     status_text.warning(f"Timeout fetching data at offset {offset}. Retrying...")
-                    time.sleep(5) # Wait longer after timeout
-                    continue # Retry current offset
+                    time.sleep(5)
+                    continue
                 except Exception as e:
                     st.error(f"Error fetching {resource_name} data at offset {offset}: {e}")
                     status_text.error(f"Error fetching {resource_name} data at offset {offset}: {e}")
-                    break # Stop fetching on error
+                    break
 
             if progress_bar:
                 progress_bar.empty()
@@ -229,19 +214,6 @@ class DataLoader:
         st.info(f"Fetching {resource_name} using **State+Year+Month** chunked strategy...")
         st.caption(f"Total chunks: {total_chunks:,} ({len(INDIAN_STATES)} states × {len(CLIMATE_YEARS_RANGE)} years × {len(MONTHS)} months). This will take a significant amount of time.")
 
-        # --- User Confirmation ---
-        # It's polite to confirm before starting a multi-hour process
-        # However, for the prototype, we might skip this and just run it.
-        # confirmed = st.button("Start Full Climate Data Fetch (Estimated 1-3 hours)?")
-        # if not confirmed:
-        #     st.warning("Fetch cancelled. Using existing cache if available.")
-        #     # Attempt to load from cache as fallback
-        #     cache_file = RESOURCES[resource_name]['cache_file']
-        #     if os.path.exists(cache_file):
-        #         try: return pd.read_parquet(cache_file)
-        #         except: return pd.DataFrame()
-        #     return pd.DataFrame()
-        # -------------------------
 
         start_time = time.time()
 
@@ -295,18 +267,16 @@ class DataLoader:
                                 if fetched_this_call < API_LIMIT_PER_REQUEST:
                                     break
 
-                                time.sleep(0.15) # Rate limiting
+                                time.sleep(0.15)
 
                             except requests.exceptions.Timeout:
                                 st.warning(f"Timeout fetching {chunk_name} at offset {offset}. Retrying...")
                                 time.sleep(5)
-                                continue # Retry
+                                continue
                             except Exception as e:
                                 st.error(f"❌ Error fetching {chunk_name} at offset {offset}: {e}")
-                                # Option: Decide whether to continue to next chunk or stop entirely
-                                break # Stop this chunk on error, continue to next State/Year/Month
+                                break
 
-                        # Update progress after each chunk (State+Year+Month) is done
                         chunks_done += 1
                         progress = chunks_done / total_chunks if total_chunks > 0 else 0.0
                         progress_bar.progress(progress)
@@ -317,8 +287,6 @@ class DataLoader:
 
                         status_msg = f"{'⚠️ ' if hit_10k_limit_in_chunk else ''}[{chunks_done}/{total_chunks}] {chunk_name}: {chunk_records_count} recs | Total: {len(all_records):,} | ETA: {timedelta(seconds=int(est_remaining)) if est_remaining > 0 else 'Calculating...'}"
                         status_text.text(status_msg)
-                        # Optionally print to console too
-                        # print(status_msg)
 
             progress_bar.empty()
             status_text.empty()
@@ -342,13 +310,11 @@ class DataLoader:
             return df
 
         st.info(f"Cleaning and standardizing {resource_key} data ({len(df):,} rows)...")
-        initial_columns = df.columns.tolist() # Keep track for logging
+        initial_columns = df.columns.tolist()
 
-        # Apply column mappings from config.py
         rename_dict = {}
         if resource_key in COLUMN_MAPPINGS:
             mappings = COLUMN_MAPPINGS[resource_key]
-            # Build rename dict only for columns present in the DataFrame
             rename_dict = {old: new for old, new in mappings.items() if old in df.columns}
             if rename_dict:
                  df = df.rename(columns=rename_dict)
@@ -358,10 +324,8 @@ class DataLoader:
         else:
              st.caption("No column mappings found in config for this resource.")
 
-        # Get final column names after potential renaming
         final_cols = df.columns.tolist()
 
-        # --- Resource-specific cleaning ---
         if resource_key == 'climate':
             col_year = next((c for c in final_cols if c.lower() == 'year'), None)
             col_month = next((c for c in final_cols if c.lower() == 'month'), None)
@@ -370,35 +334,29 @@ class DataLoader:
             col_state = next((c for c in final_cols if c.lower() == 'state'), None)
             col_district = next((c for c in final_cols if c.lower() == 'district'), None)
             col_agency = next((c for c in final_cols if c.lower() == 'agency'), None)
-
-            # Convert numeric columns
             numeric_cols_to_convert = [col_year, col_month, col_rainfall]
             for col in numeric_cols_to_convert:
-                if col: # Check if column exists
+                if col:
                     df[col] = pd.to_numeric(df[col], errors='coerce')
 
-            # Convert Date column if present
             if col_date:
                 df[col_date] = pd.to_datetime(df[col_date], errors='coerce')
 
-            # Clean text fields
             text_cols_to_clean = [col_state, col_district, col_agency]
             for col in text_cols_to_clean:
                 if col:
-                    df[col] = df[col].astype(str).str.strip() # Ensure string type
+                    df[col] = df[col].astype(str).str.strip()
 
-            # Drop rows with critical missing data for climate
             critical_cols = [col_year, col_month, col_rainfall, col_state, col_district]
-            existing_critical = [col for col in critical_cols if col] # Filter out None values
+            existing_critical = [col for col in critical_cols if col]
             initial_rows = len(df)
             df = df.dropna(subset=existing_critical)
             dropped_rows = initial_rows - len(df)
             if dropped_rows > 0:
                 st.caption(f"Dropped {dropped_rows:,} rows due to missing critical climate data.")
 
-            # Convert Year and Month to integers after dropping NaNs
             if col_year and not df[col_year].isnull().all():
-                df[col_year] = df[col_year].astype('Int64') # Use nullable integer
+                df[col_year] = df[col_year].astype('Int64')
             if col_month and not df[col_month].isnull().all():
                 df[col_month] = df[col_month].astype('Int64')
 
@@ -408,25 +366,21 @@ class DataLoader:
             col_year = next((c for c in final_cols if c.lower() == 'year'), None)
             col_area = next((c for c in final_cols if c.lower() == 'area'), None)
             col_production = next((c for c in final_cols if c.lower() == 'production'), None)
-            col_season = next((c for c in final_cols if c.lower() == 'season'), None) # Added Season
-            col_crop = next((c for c in final_cols if c.lower() == 'crop'), None) # Added Crop
+            col_season = next((c for c in final_cols if c.lower() == 'season'), None)
+            col_crop = next((c for c in final_cols if c.lower() == 'crop'), None)
 
-            # Standardize state names
             if col_state:
                 df[col_state] = df[col_state].astype(str).str.title().str.strip()
-            # Clean other text cols
             text_cols_agri = [col_district, col_season, col_crop]
             for col in text_cols_agri:
                 if col:
                      df[col] = df[col].astype(str).str.strip()
 
-            # Convert numeric columns for agriculture
             numeric_cols_agri = [col_area, col_production, col_year]
             for col in numeric_cols_agri:
                 if col:
                     df[col] = pd.to_numeric(df[col], errors='coerce')
 
-            # Drop rows where critical identifiers are missing
             critical_cols_agri = [col_state, col_district, col_year]
             existing_critical_agri = [col for col in critical_cols_agri if col]
             initial_rows = len(df)
@@ -435,7 +389,6 @@ class DataLoader:
             if dropped_rows > 0:
                  st.caption(f"Dropped {dropped_rows:,} rows due to missing critical agriculture data.")
 
-             # Convert Year to integer after dropping NaNs
             if col_year and not df[col_year].isnull().all():
                 df[col_year] = df[col_year].astype('Int64')
 
@@ -447,10 +400,7 @@ class DataLoader:
 
 
     def load_data(self, resource_key: str) -> pd.DataFrame:
-        """
-        Main entry point for loading data with version-aware caching.
-        *** MODIFIED TO SKIP CLIMATE REFRESH FOR PROTOTYPE ***
-        """
+        """Main entry point for loading data with version-aware caching."""
         if resource_key not in RESOURCES:
             st.error(f"Unknown resource key: {resource_key}")
             return pd.DataFrame()
@@ -459,21 +409,17 @@ class DataLoader:
         resource_id = resource_info['id']
         cache_file = resource_info['cache_file']
 
-        # Initialize cache log entry if needed
         if resource_key not in self.cache_log:
             self.cache_log[resource_key] = {
                 'last_checked_time': None,
                 'current_data_timestamp': None
             }
 
-        # --- Check if cache file exists ---
         cache_exists = os.path.exists(cache_file)
 
-        # --- If it's the climate dataset and cache exists, ALWAYS use it ---
         if resource_key == 'climate' and cache_exists:
             st.info("Using pre-downloaded baseline cache for climate data (refresh disabled for performance).")
             try:
-                # Still perform a quick metadata check to *inform* the user
                 remote_timestamp, _ = self._get_remote_metadata(resource_id)
                 local_timestamp = self.cache_log[resource_key].get('current_data_timestamp')
                 if remote_timestamp and local_timestamp and remote_timestamp > local_timestamp:
@@ -486,27 +432,19 @@ class DataLoader:
                 return df
             except Exception as e:
                 st.error(f"Failed to load existing climate cache file {cache_file}: {e}. Trying to fetch.")
-                # Fall through to fetch if cache is corrupted
 
-        # --- For AGRICULTURE data, or if climate cache is MISSING ---
-        # Proceed with normal version-aware logic
-
-        # Step 2: The "Daily Gate"
         if self._check_daily_gate(resource_key):
             if cache_exists:
                 try:
                     df = pd.read_parquet(cache_file)
-                    # st.success(f"✓ Using recent cache for {resource_key.capitalize()}") # Less verbose
                     return df
                 except Exception as e:
                     st.warning(f"Failed to load recent cache file {cache_file}: {e}. Will attempt refresh.")
 
-        # Step 3: Lightweight "Freshness Check"
         st.caption(f"Checking for updates for {resource_key}...")
         remote_timestamp, total_records = self._get_remote_metadata(resource_id)
         current_time = datetime.now().isoformat()
 
-        # Update last checked time immediately
         self.cache_log[resource_key]['last_checked_time'] = current_time
         self._save_cache_log()
 
@@ -521,7 +459,6 @@ class DataLoader:
                 st.error(f"Fatal: No cache available and could not fetch metadata for {resource_key}")
                 return pd.DataFrame()
 
-        # Step 4 & 5: The "Smart Comparison" and "Fast Path"
         local_timestamp = self.cache_log[resource_key].get('current_data_timestamp')
 
         if local_timestamp == remote_timestamp and cache_exists:
@@ -530,15 +467,12 @@ class DataLoader:
             except Exception as e:
                 st.warning(f"Failed to load up-to-date cache file {cache_file}: {e}. Will attempt refresh.")
 
-        # --- Step 6: The "Slow Path" - Data IS Stale or Cache Missing/Corrupt ---
         st.info(f"⏳ Refreshing data for {resource_key.capitalize()}...")
 
-        # 6a: API Loop - Use appropriate fetcher
         if resource_key == 'climate':
-            # This path is now only hit if climate cache was MISSING or CORRUPTED
             st.warning("Climate cache missing or corrupted. Attempting full chunked fetch (this will take hours)...")
             df = self._fetch_climate_records_chunked(resource_id, resource_key)
-        else: # Agriculture
+        else:
             if total_records is None:
                  st.warning(f"Total records count unavailable for {resource_key}. Using safety cap.")
             df = self._fetch_all_records(resource_id, resource_key, total_records)
@@ -553,7 +487,6 @@ class DataLoader:
                      return pd.DataFrame()
             return pd.DataFrame()
 
-        # 6b: Transform & Standardize
         df = self._clean_and_standardize(df, resource_key)
 
         if df.empty:
@@ -566,7 +499,6 @@ class DataLoader:
                        return pd.DataFrame()
              return pd.DataFrame()
 
-        # 6c: Cache Write
         try:
             df.to_parquet(cache_file, index=False)
             st.caption(f"Cache file '{cache_file}' updated.")
@@ -575,7 +507,6 @@ class DataLoader:
             st.warning("Returning in-memory data frame, but it won't be cached for next run.")
             return df
 
-        # 6d: Log Update
         self.cache_log[resource_key]['current_data_timestamp'] = remote_timestamp
         self._save_cache_log()
 
@@ -584,14 +515,12 @@ class DataLoader:
         return df
 
 
-# --- Main Functions for app.py ---
 
-@st.cache_resource(show_spinner=False) # Caches the DataLoader instance
+@st.cache_resource(show_spinner=False)
 def get_data_loader(api_key: str) -> DataLoader:
     """Gets a cached instance of the DataLoader."""
     return DataLoader(api_key)
 
-# This is the function your app.py will call
 def load_all_datasets() -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Main entry point for Streamlit app.
@@ -600,8 +529,8 @@ def load_all_datasets() -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     try:
         api_key = st.secrets["DATA_GOV_API_KEY"]
-        if not api_key: raise KeyError # Handle empty key
-    except (FileNotFoundError, AttributeError): # Handle missing secrets object or file
+        if not api_key: raise KeyError
+    except (FileNotFoundError, AttributeError):
         st.error("Missing `.streamlit/secrets.toml` file.")
         st.info("Please create a `.streamlit/secrets.toml` file with `DATA_GOV_API_KEY = \"your_key_here\"`.")
         return pd.DataFrame(), pd.DataFrame()
@@ -626,11 +555,10 @@ def load_all_datasets() -> Tuple[pd.DataFrame, pd.DataFrame]:
         st.caption("Loading Climate Data...")
         df_climate = loader.load_data('climate')
 
-    st.divider() # Add separator
+    st.divider()
 
     if df_agri.empty or df_climate.empty:
         st.error("Critical Error: One or more essential datasets could not be loaded. Check messages above. The application cannot proceed.")
-        # Optionally: st.stop() here if datasets are absolutely required
     else:
         st.success("✓ All datasets loaded successfully.")
 

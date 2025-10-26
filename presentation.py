@@ -1,7 +1,5 @@
-""""
-The "Data-First Fork" - Presentation Layer
-Handles visualization using the directly captured DataFrame
-and synthesis using the agent's text output.
+"""
+Presentation layer for data visualization and synthesis.
 """
 
 import json
@@ -10,9 +8,9 @@ import io
 from typing import Dict, Any, Optional, Tuple
 import pandas as pd
 import streamlit as st
-from litellm import completion # Keep for synthesis
+from litellm import completion
 from config import (
-    LLM_TEMPERATURE, # Keep for synthesis
+    LLM_TEMPERATURE,
     AGENT_VERBOSE, DEFAULT_CHART_HEIGHT, MAX_CHART_POINTS
 )
 
@@ -22,9 +20,8 @@ class PresentationLayer:
     """
 
     def __init__(self, llm_config: Dict[str, str]):
-        self.llm_config = llm_config # Needed for synthesis step
+        self.llm_config = llm_config
 
-    # --- _extract_chart_data is NO LONGER NEEDED ---
 
     def _format_year_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -45,11 +42,9 @@ class PresentationLayer:
         """
         datasets_used = []
         
-        # Keywords that indicate agriculture data
         agri_keywords = ['rice', 'wheat', 'sugarcane', 'crop', 'production', 'agriculture', 
                         'yield', 'area', 'season', 'kharif', 'rabi', 'df1', 'agri']
         
-        # Keywords that indicate climate data
         climate_keywords = ['rainfall', 'temperature', 'climate', 'weather', 'humidity', 
                            'precipitation', 'df2', 'rain']
         
@@ -59,11 +54,9 @@ class PresentationLayer:
         
         combined_text = query_lower + " " + output_lower + " " + code_lower
         
-        # Check for agriculture indicators
         if any(keyword in combined_text for keyword in agri_keywords) or 'df1' in code_lower:
             datasets_used.append('agriculture')
         
-        # Check for climate indicators
         if any(keyword in combined_text for keyword in climate_keywords) or 'df2' in code_lower:
             datasets_used.append('climate')
         
@@ -97,7 +90,6 @@ class PresentationLayer:
         if df is None or df.empty:
             return None, {}
 
-        # (Keep your existing _detect_chart_type logic - it was good!)
         columns = df.columns.tolist()
         numeric_cols = []
         for col in columns:
@@ -130,30 +122,17 @@ class PresentationLayer:
 
 
     def visualize(self, result_df: Optional[pd.DataFrame]) -> bool:
-        """
-        Path A: Deterministic Visualization using the captured DataFrame.
-        
-        MODIFIED: Includes a check to prevent charting of merged, mixed-era data
-        based on user feedback.
-        """
+        """Visualization using the captured DataFrame."""
         if result_df is None or result_df.empty:
             if AGENT_VERBOSE:
                 st.info("ℹ️ No result DataFrame captured for visualization.")
             return False
 
-        df_display = result_df # Use the captured df directly
+        df_display = result_df
 
-        # --- NEW: Mixed-Era Data Check ---
-        # Check if the DataFrame contains columns that are proxies for data from
-        # both df1 (Agri) and df2 (Climate). This indicates a merged,
-        # multi-period DataFrame that should not be plotted on a single chart.
-        
-        # Proxy columns for df1 (Agri, 1997-2014)
-        agri_cols = ['Production', 'Area', 'Yield'] 
-        # Proxy columns for df2 (Climate, 2018-2025)
+        agri_cols = ['Production', 'Area', 'Yield']
         climate_cols = ['Rainfall', 'Temperature', 'Humidity']
 
-        # Check for case-insensitive matches or partial matches (e.g., 'Avg_Rainfall')
         df_cols_lower = [str(c).lower() for c in df_display.columns]
         
         has_agri_data = any(
@@ -170,24 +149,19 @@ class PresentationLayer:
         
         if is_mixed_era:
             st.info("ℹ️ A single chart is not displayed because the underlying data combines metrics from different, non-overlapping time periods (e.g., Agriculture 1997-2014 and Climate 2018-2025). Please refer to the data table below and the analysis summary for findings.")
-            
-            # Still show the data table, as it's correct and valuable
             st.subheader("📊 Combined Data Table")
             df_mixed_formatted = self._format_year_columns(df_display)
             
             with st.expander("📋 View Full Result Data Table"):
                 st.dataframe(df_mixed_formatted, use_container_width=True)
-            return False # Return False as no chart was drawn
-        # --- End of Mixed-Era Data Check ---
+            return False
 
-        # If not mixed_era, proceed with normal chart detection and plotting
         if len(df_display) > MAX_CHART_POINTS:
             st.warning(f"Data has {len(df_display)} points. Displaying first {MAX_CHART_POINTS} for chart performance.")
             df_chart = df_display.head(MAX_CHART_POINTS).copy()
         else:
             df_chart = df_display.copy()
         
-        # Format year columns to display without commas
         df_chart = self._format_year_columns(df_chart)
 
         chart_type, config = self._detect_chart_type(df_chart)
@@ -195,7 +169,6 @@ class PresentationLayer:
         if chart_type is None:
             if AGENT_VERBOSE:
                 st.info("ℹ️ Could not determine a suitable chart type for the result data.")
-            # Still show the data table if no chart type
             df_nochart_formatted = self._format_year_columns(df_display)
             
             with st.expander("📋 View Result Data Table (No Chart Type Detected)"):
@@ -207,7 +180,6 @@ class PresentationLayer:
             x_col = config.get('x')
             y_col = config.get('y')
 
-            # Validate columns before plotting
             valid_x = x_col and x_col in df_chart.columns
             valid_y = y_col and (
                 (isinstance(y_col, list) and all(c in df_chart.columns for c in y_col)) or
@@ -215,7 +187,6 @@ class PresentationLayer:
             )
             use_index_x = not valid_x and chart_type in ['line', 'bar']
 
-            # Plotting logic (same as before, but using df_chart directly)
             if chart_type == 'line':
                 st.line_chart(df_chart.set_index(x_col) if valid_x else df_chart,
                                  y=y_col if valid_y else None, height=config.get('height'))
@@ -229,11 +200,10 @@ class PresentationLayer:
                  st.dataframe(df_chart, use_container_width=True)
 
 
-            # Format year columns in the full data table display
             df_display_formatted = self._format_year_columns(df_display)
             
             with st.expander("📋 View Full Result Data Table"):
-                st.dataframe(df_display_formatted, use_container_width=True) # Show formatted df
+                st.dataframe(df_display_formatted, use_container_width=True)
             return True
 
         except Exception as e:
@@ -246,13 +216,9 @@ class PresentationLayer:
             return False
 
     def synthesize(self, query: str, output_text: str, code: str, result_df: Optional[pd.DataFrame]) -> str:
-        """
-        Path B: LLM-Powered Synthesis using captured text output AND DataFrame.
-        """
-        # Detect which datasets were used
+        """LLM-Powered Synthesis using captured text output and DataFrame."""
         datasets_used = self._detect_datasets_used(query, output_text, code)
         
-        # (Keep your existing synthesis prompt - it was good!)
         system_prompt = """You are a policy analyst specializing in Indian agriculture and rural development.
 
 Your task is to:
@@ -269,7 +235,6 @@ Important constraints:
 - Frame insights for policymakers.
 - Maintain objectivity."""
 
-        # Prepare context for the LLM, including a summary of the dataframe if available
         data_summary = ""
         if result_df is not None and not result_df.empty:
              data_summary = f"\n\nA data table with {result_df.shape[0]} rows and columns {result_df.columns.tolist()} was also produced:\n{result_df.head().to_string()}\n..."
@@ -300,38 +265,31 @@ Please provide a synthesis for a policy brief, covering:
                 {"role": "user", "content": user_prompt}
             ]
 
-            # Use the llm_config passed during initialization
             response = completion(
                 messages=messages,
-                **self.llm_config # Pass model, key, temp etc.
+                **self.llm_config
             )
 
             synthesis = response.choices[0].message.content.strip()
             
-            # Append data source citations based on datasets used
             data_sources = self._format_data_sources(datasets_used)
             synthesis_with_sources = synthesis + data_sources
             
             return synthesis_with_sources
         except Exception as e:
             st.error(f"Synthesis LLM call failed: {e}")
-            # Fallback to just showing the raw text output if synthesis fails
             st.warning("Could not generate summary. Displaying raw output.")
             fallback_output = f"**Raw Code Output:**\n```\n{output_text if output_text else 'No text output captured.'}\n```"
-            # Still append data sources even in fallback
             data_sources = self._format_data_sources(datasets_used)
             return fallback_output + data_sources
 
 
     def present_results(self, query: str, result: Dict[str, Any]) -> None:
-        """
-        Main presentation method using captured DataFrame and text output.
-        """
+        """Main presentation method using captured DataFrame and text output."""
         if not result['success']:
             st.error("❌ Analysis Failed")
             error_msg = result.get('error', 'Unknown error.')
             st.error(f"Error: {error_msg}")
-            # Show details from the failed attempt
             last_attempt = result['attempts'][-1] if result.get('attempts') else {}
             if last_attempt.get('code'):
                 with st.expander("🔍 Debug: View Last Attempted Code"):
@@ -343,13 +301,10 @@ Please provide a synthesis for a policy brief, covering:
 
         st.success("✓ Analysis Complete")
 
-        # --- Path A: Visualization ---
-        # Use the captured DataFrame object directly
         result_df = result.get('result_df')
-        self.visualize(result_df) # This handles None/mixed-era cases internally
+        self.visualize(result_df)
         st.divider()
 
-        # --- Path B: Synthesis ---
         st.subheader("📝 Analysis Summary")
         output_text = result.get('output_text', '')
         code = result.get('code', '')
@@ -359,15 +314,11 @@ Please provide a synthesis for a policy brief, covering:
 
         st.markdown(synthesis)
 
-        # --- Debug Info ---
         if AGENT_VERBOSE:
-              # Show the raw text output from exec()
               with st.expander("🔍 View Raw Code Output (stdout)"):
                     st.text(output_text if output_text else "No text output captured.")
-              # Show the final code executed
               with st.expander("💻 View Final Executed Code"):
                   st.code(code if code else "No code executed.", language='python')
-              # Show simplified attempt history
               with st.expander("🔄 View Agent Attempts"):
                    attempts = result.get('attempts', [])
                    for i, attempt in enumerate(attempts):
@@ -375,12 +326,8 @@ Please provide a synthesis for a policy brief, covering:
                         if attempt['error']: st.error(f"Error: {attempt['error']}")
 
 
-# --- Factory Function ---
 def create_presentation_layer(llm_config: dict) -> PresentationLayer:
-    """
-    Factory function to create the presentation layer.
-    Requires llm_config for the synthesis step.
-    """
+    """Factory function to create the presentation layer."""
     if not llm_config:
          st.error("LLM Configuration missing, cannot create Presentation Layer.")
          return None
